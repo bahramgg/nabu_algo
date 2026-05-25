@@ -438,14 +438,14 @@ function scoreEngagement(tweets,followers,totalTweets){
   const replyRate=tR/tweets.length, rtRate=tRT/tweets.length, qRate=tQ/tweets.length, likeRate=tL/tweets.length;
   const strict=(v,div)=>Math.max(0,Math.min(100,Math.round(Math.sqrt(Math.max(v,0)/div)*100)));
   return[
-    {name:'Follow Conversion',score:strict(followers/Math.max(totalTweets,1),35),cat:'engagement'},
-    {name:'Reply Depth',score:strict(replyRate,9),cat:'engagement'},
-    {name:'Quote + RT Power',score:strict(qRate+rtRate,14),cat:'engagement'},
-    {name:'Share Rate',score:strict(rtRate,11),cat:'engagement'},
-    {name:'Media Score',score:Math.round((media/tweets.length)*90),cat:'engagement'},
-    {name:'Dwell Score',score:Math.min(100,Math.round(avg('textLength')/280*95)),cat:'engagement'},
-    {name:'Viral Variance',score:strict(maxE/Math.max(avgE,1),9),cat:'engagement'},
-    {name:'Like Velocity',score:strict(likeRate,28),cat:'engagement'},
+    {name:'Follow Conversion',score:strict(followers/Math.max(totalTweets,1),55),cat:'engagement'},
+    {name:'Reply Depth',score:strict(replyRate,16),cat:'engagement'},
+    {name:'Quote + RT Power',score:strict(qRate+rtRate,24),cat:'engagement'},
+    {name:'Share Rate',score:strict(rtRate,19),cat:'engagement'},
+    {name:'Media Score',score:Math.round((media/tweets.length)*75),cat:'engagement'},
+    {name:'Dwell Score',score:Math.min(100,Math.round(avg('textLength')/280*80)),cat:'engagement'},
+    {name:'Viral Variance',score:strict(maxE/Math.max(avgE,1),13),cat:'engagement'},
+    {name:'Like Velocity',score:strict(likeRate,42),cat:'engagement'},
   ];
 }
 function scoreStructural(tweets,followers,following,age){
@@ -479,7 +479,7 @@ function calcOverall(f){
   const raw=t/tw;
   // CALIBRATED CURVE: near-linear; only the bottom is pulled down so weak accounts score low,
   // while strong accounts keep an honest, generous-but-earned score.
-  const curved=Math.pow(raw/100,1.04)*100;
+  const curved=Math.pow(raw/100,1.10)*100;
   let sc=Math.max(1,Math.round(curved));
   // avoid "round" looking numbers (multiples of 5/10) — nudge by 1 so scores feel precise
   if(sc%5===0){ sc = sc>=99 ? sc-1 : sc+1; }
@@ -572,12 +572,12 @@ THE REAL ALGORITHM YOU ARE SCORING AGAINST:
 
 SCORING DOCTRINE — be FAIR, ACCURATE, and CALIBRATED (not harsh, not generous):
 - 85-100 = elite, best-in-class accounts (major brands, top creators with strong original voice + real conversation).
-- 70-84 = strong, established accounts that clearly earn follows and engagement (most well-known brands/creators land here — e.g. a respected company or active KOL).
+- 70-84 = strong, established accounts that clearly earn follows and engagement. This is EARNED, not default — only genuinely strong accounts with real authority and conversation belong here.
 - 55-69 = solid, healthy accounts with good fundamentals.
 - 40-54 = average accounts.
 - 20-39 = weak accounts (low engagement, generic content, little follow-pull).
 - Below 20 = genuinely bad/inactive/spammy accounts.
-- Judge each account on its real merits. A well-run, recognizable account SHOULD score in the 70s or 80s — do not artificially suppress good accounts.
+- Judge each account on its real merits. Most ordinary active accounts land in the 45-60 range. Reserve 70+ for accounts with clear authority, strong original voice, and real conversation — not just decent activity.
 - Likes alone are weak signal, but consistent replies + reposts + quotes + a clear voice = high scores.
 - Reserve low scores for accounts that genuinely lack engagement, originality, or consistency.
 - Be precise and realistic — your scores should match how the X algorithm and a smart human would actually rate the account.
