@@ -519,7 +519,7 @@ async function analyze(){
     const td=await proxyFetch(`https://api.twitterapi.io/twitter/user/last_tweets?userName=${u}&count=200`);
     const raw=td.data?.tweets||td.tweets||[];
     const cut=Date.now()-90*864e5;
-    const tweets=raw.filter(t=>new Date(t.createdAt||0).getTime()>cut).map(t=>({text:t.text||'',createdAt:t.createdAt,likeCount:t.likeCount||0,replyCount:t.replyCount||0,retweetCount:t.retweetCount||0,quoteCount:t.quoteCount||0,hasMedia:detectMedia(t),hasLink:!!(t.entities?.urls?.length),isReply:!!t.inReplyToId,textLength:(t.text||'').length}));
+    const tweets=raw.filter(t=>new Date(t.createdAt||0).getTime()>cut).map(t=>({text:t.text||'',createdAt:t.createdAt,likeCount:t.likeCount||0,replyCount:t.replyCount||0,retweetCount:t.retweetCount||0,quoteCount:t.quoteCount||0,hasMedia:detectMedia(t),hasLink:!!(t.entities?.urls?.length),isReply:!!t.inReplyToId,isRT:!!(t.retweeted_tweet||/^RT @/.test(t.text||'')),textLength:(t.text||'').length}));
     if(!tweets.length)throw new Error('No tweets in last 90 days');
 
     // signature kept only for storage; reuse is purely time-based (KV TTL = 48h)
@@ -542,9 +542,49 @@ async function analyze(){
     const s=txt.indexOf('{'),e=txt.lastIndexOf('}');
     if(s===-1)throw new Error('Invalid AI response');
     const ai=JSON.parse(txt.slice(s,e+1));
+    // HARD CALIBRATION: AI models score generously. Compress AI scores downward so results stay realistic.
+    const squash=v=>{ const x=Math.max(0,Math.min(100,v||0)); return Math.round(Math.pow(x/100,1.35)*100); };
+    if(Array.isArray(ai.content)) ai.content.forEach(f=>{ if(typeof f.score==='number') f.score=squash(f.score); });
+    if(Array.isArray(ai.risk)) ai.risk.forEach(f=>{ if(typeof f.score==='number') f.score=squash(f.score); });
     setMsg('finalizing...');
     const all=[...eng,...str,...eli,...(ai.content||[]),...(ai.risk||[])];
-    const overall=calcOverall(all);
+    let overall=calcOverall(all);
+    // ===== ALGORITHM REALITY MODEL: balance ALL the signals X actually uses =====
+    const fol=user.followers||0;
+    const flg=user.following||0;
+    const tw=tweets.length;
+    // --- signal 1: originality (real algorithm down-ranks pure retweets/derivative content) ---
+    const origRatio = tweets.filter(t=>!t.isRT).length/Math.max(tw,1);
+    // --- signal 2: conversation earned (reply chains ~150x a like in the algorithm) ---
+    const convoRate = tweets.reduce((s,t)=>s+(t.replyCount||0)+(t.retweetCount||0)+(t.quoteCount||0),0)/Math.max(tw,1);
+    // --- signal 3: engagement depth — meaningful actions vs cheap likes ---
+    const likeSum = tweets.reduce((s,t)=>s+(t.likeCount||0),0);
+    const deepSum = tweets.reduce((s,t)=>s+(t.replyCount||0)+(t.retweetCount||0)+(t.quoteCount||0),0);
+    const depthRatio = deepSum/Math.max(likeSum,1);
+    // --- signal 4: TweepCred-style authority — followers MATTER, but quality-adjusted ---
+    // raw reach from followers (log scale): 100~0.3, 1k~0.45, 10k~0.6, 100k~0.78, 1M~0.93, 10M~1
+    const reach = Math.max(0.2, Math.min(1, Math.log10(fol+10)/7));
+    // follower QUALITY: a healthy follower/following ratio signals real (not farmed) followers
+    const ffRatio = fol/Math.max(flg,1);
+    const folQuality = Math.max(0.6, Math.min(1.1, 0.6 + Math.sqrt(Math.min(ffRatio,10))/10*0.5)); // farms (ratio<1) get ~0.6, organic ~1+
+    const authority = Math.max(0.25, Math.min(1, reach*folQuality));
+    // --- combine into a balanced quality factor (each contributes, none dominates) ---
+    // weights: authority .30, conversation .28, originality .24, depth .18
+    const qAuthority = 0.45 + authority*0.55;        // 0.45..1
+    const qConvo     = 0.5 + Math.min(1,Math.sqrt(convoRate/35))*0.5;  // 0.5..1
+    const qOrig      = 0.45 + origRatio*0.55;        // 0.45..1
+    const qDepth     = 0.6 + Math.min(depthRatio,0.35)/0.35*0.4;       // 0.6..1
+    const quality = qAuthority*0.30 + qConvo*0.28 + qOrig*0.24 + qDepth*0.18; // weighted blend ~0.45..1
+    // spam farm hard penalty
+    const spam = (fol>50 && flg>fol*3) ? 0.85 : 1;
+    // apply: blend raw score with quality (balanced — keeps a fair middle)
+    overall = Math.round(overall * (0.30 + 0.70*quality) * spam);
+    // gentle strictness curve — keeps the middle reasonable, pulls only the bottom hard
+    overall = Math.round(Math.pow(overall/100, 1.08) * 100);
+    // safety floor for derivative (retweet-only) accounts
+    if(origRatio<0.2) overall=Math.min(overall,25);
+    else if(origRatio<0.4) overall=Math.min(overall,48);
+    overall=Math.max(1,Math.min(100,overall));
     const radar={Engagement:Math.round(eng.reduce((s,f)=>s+f.score,0)/eng.length),Content:Math.round((ai.content||[]).reduce((s,f)=>s+f.score,0)/Math.max((ai.content||[]).length,1)),Risk:Math.round((ai.risk||[]).reduce((s,f)=>s+f.score,0)/Math.max((ai.risk||[]).length,1)),Structural:Math.round(str.reduce((s,f)=>s+f.score,0)/str.length),Visibility:Math.round(eli.reduce((s,f)=>s+f.score,0)/eli.length)};
     const result={username:u,overallScore:overall,percentile:percentile(overall),archetype:ai.archetype||'THE OPERATOR',oneLineProfile:ai.oneLineProfile||'',radar,engagement:eng,content:ai.content||[],risk:ai.risk||[],structural:str,eligibility:eli,recommendations:ai.recommendations||[]};
     // save to KV (48h, keyed by signature for change-detection)
