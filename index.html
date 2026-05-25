@@ -108,10 +108,10 @@ header { display:flex; align-items:center; justify-content:space-between; paddin
 .load-title { font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:18px; margin-top:14px; }
 .load-pct { font-family:'Space Mono',monospace; font-size:13px; color:#00E676; margin-top:4px; font-weight:700; }
 .load-steps { max-width:380px; margin:0 auto; display:flex; flex-direction:column; gap:13px; }
-.lstep { display:flex; align-items:center; gap:13px; font-family:'Space Mono',monospace; font-size:13px; color:var(--muted); opacity:.4; transition:opacity .4s,color .4s; }
+.lstep { display:flex; align-items:flex-start; gap:13px; font-family:'Space Mono',monospace; font-size:13px; color:var(--muted); opacity:.4; transition:opacity .4s,color .4s; text-align:left; line-height:1.4; }
 .lstep.active { opacity:1; color:var(--fg); }
 .lstep.done { opacity:1; color:var(--fg); }
-.lstep-ico { width:20px; height:20px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
+.lstep-ico { width:20px; height:20px; flex-shrink:0; display:flex; align-items:center; justify-content:center; margin-top:1px; }
 .lstep-dot { width:7px; height:7px; border-radius:50%; background:var(--line); transition:all .3s; }
 .lstep.active .lstep-dot { background:#00E676; box-shadow:0 0 10px #00E676; animation:pulse 1s infinite; }
 @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.5)} }
@@ -480,7 +480,10 @@ function calcOverall(f){
   // CALIBRATED CURVE: near-linear; only the bottom is pulled down so weak accounts score low,
   // while strong accounts keep an honest, generous-but-earned score.
   const curved=Math.pow(raw/100,1.04)*100;
-  return Math.max(1,Math.round(curved));
+  let sc=Math.max(1,Math.round(curved));
+  // avoid "round" looking numbers (multiples of 5/10) — nudge by 1 so scores feel precise
+  if(sc%5===0){ sc = sc>=99 ? sc-1 : sc+1; }
+  return Math.max(1,Math.min(100,sc));
 }
 function percentile(s){if(s>=85)return'Top 1%';if(s>=75)return'Top 5%';if(s>=65)return'Top 15%';if(s>=55)return'Top 30%';if(s>=45)return'Top 50%';return'Bottom 50%';}
 function parsePercentile(p){const m={'Top 1%':99,'Top 5%':95,'Top 15%':85,'Top 30%':70,'Top 50%':50,'Bottom 50%':30};return m[p]||50;}
