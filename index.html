@@ -425,24 +425,28 @@ function detectMedia(t){
 function scoreEngagement(tweets,followers,totalTweets){
   if(!tweets.length)return[];
   const avg=k=>tweets.reduce((s,t)=>s+(t[k]||0),0)/tweets.length;
-  const tR=tweets.reduce((s,t)=>s+(t.replyCount||0),0);
-  const tRT=tweets.reduce((s,t)=>s+(t.retweetCount||0),0);
-  const tQ=tweets.reduce((s,t)=>s+(t.quoteCount||0),0);
-  const tL=tweets.reduce((s,t)=>s+(t.likeCount||0),0);
-  const media=tweets.filter(t=>t.hasMedia).length;
-  const avgE=(tR+tRT+tQ+tL)/tweets.length;
-  const engs=tweets.map(t=>(t.likeCount||0)+(t.replyCount||0)+(t.retweetCount||0));
+  // Engagement is measured on ORIGINAL posts only — retweets' engagement belongs to the original author, not this account.
+  const origT=tweets.filter(t=>!t.isRT);
+  const engBase=origT.length>0?origT:tweets; // fallback if everything is RT (will score low anyway)
+  const nOrig=engBase.length;
+  const tR=engBase.reduce((s,t)=>s+(t.replyCount||0),0);
+  const tRT=engBase.reduce((s,t)=>s+(t.retweetCount||0),0);
+  const tQ=engBase.reduce((s,t)=>s+(t.quoteCount||0),0);
+  const tL=engBase.reduce((s,t)=>s+(t.likeCount||0),0);
+  const media=engBase.filter(t=>t.hasMedia).length;
+  const avgE=(tR+tRT+tQ+tL)/nOrig;
+  const engs=engBase.map(t=>(t.likeCount||0)+(t.replyCount||0)+(t.retweetCount||0));
   const maxE=Math.max(...engs,1);
   const f=Math.max(followers,1);
   // engagement rate per follower (the real signal) — strict
-  const replyRate=tR/tweets.length, rtRate=tRT/tweets.length, qRate=tQ/tweets.length, likeRate=tL/tweets.length;
+  const replyRate=tR/nOrig, rtRate=tRT/nOrig, qRate=tQ/nOrig, likeRate=tL/nOrig;
   const strict=(v,div)=>Math.max(0,Math.min(100,Math.round(Math.sqrt(Math.max(v,0)/div)*100)));
   return[
     {name:'Follow Conversion',score:strict(followers/Math.max(totalTweets,1),105),cat:'engagement'},
     {name:'Reply Depth',score:strict(replyRate,30),cat:'engagement'},
     {name:'Quote + RT Power',score:strict(qRate+rtRate,46),cat:'engagement'},
     {name:'Share Rate',score:strict(rtRate,37),cat:'engagement'},
-    {name:'Media Score',score:Math.round((media/tweets.length)*58),cat:'engagement'},
+    {name:'Media Score',score:Math.round((media/nOrig)*58),cat:'engagement'},
     {name:'Dwell Score',score:Math.min(100,Math.round(avg('textLength')/280*60)),cat:'engagement'},
     {name:'Viral Variance',score:strict(maxE/Math.max(avgE,1),25),cat:'engagement'},
     {name:'Like Velocity',score:strict(likeRate,80),cat:'engagement'},
